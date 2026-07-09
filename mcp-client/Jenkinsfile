@@ -1,0 +1,155 @@
+pipeline {
+    agent any
+
+    tools {
+        maven "maven"
+        jdk "corretto21"
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        timestamps()
+    }
+
+    parameters {
+        booleanParam(
+            name: 'FORCE_BUILD',
+            defaultValue: false,
+            description: 'Ignorer la détection de changement et forcer le build/déploiement même sans modification détectée dans mcp-client/'
+        )
+    }
+
+    environment {
+        APP_NAME    = "mcp-client"
+        IMAGE_TAG   = "${BUILD_NUMBER}"
+        IMAGE_REF   = "${APP_NAME}:${IMAGE_TAG}"
+        TAR_FILE    = "${APP_NAME}-${IMAGE_TAG}.tar"
+        NEXUS_URL   = "http://172.20.10.87:8081"
+        NEXUS_REPO  = "mcp-raw"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                // Monorepo : on clone tout le repo, ce module vit dans le sous-dossier mcp-client/
+                git branch: 'master', url: 'https://github.com/sanogosy/mcp-modules.git' // AJUSTER l'URL réelle du repo
+            }
+        }
+
+        stage('Build Jar') {
+            when {
+                anyOf {
+                    changeset "mcp-client/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                dir('mcp-client') {
+                    sh 'mvn -B clean package -DskipTests'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            when {
+                anyOf {
+                    changeset "mcp-client/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                // contexte de build = sous-dossier mcp-client (contient le Dockerfile)
+                sh "docker build -t ${IMAGE_REF} mcp-client"
+            }
+        }
+
+        stage('Export Image to Tar') {
+            when {
+                anyOf {
+                    changeset "mcp-client/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                // Pas de registre Docker, pas de TLS requis : on exporte l'image
+                // en fichier .tar, comme le zip Angular.
+                sh "docker save ${IMAGE_REF} -o ${TAR_FILE}"
+            }
+        }
+
+        stage('Publish to Nexus') {
+            when {
+                anyOf {
+                    changeset "mcp-client/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                sh """
+                    curl -u admin:adminadmin --upload-file ${TAR_FILE} ${NEXUS_URL}/repository/${NEXUS_REPO}/${TAR_FILE}
+                """
+            }
+        }
+
+        stage('Deploy via Ansible') {
+            when {
+                anyOf {
+                    changeset "mcp-client/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                // NOTE : mcp-client dépend de mcp-server + Ollama déjà démarrés sur le node Docker.
+                sshPublisher(publishers: [
+                    sshPublisherDesc(
+                        configName: 'Ansible_Controller',
+                        transfers: [
+                            sshTransfer(
+                                execCommand: "ansible-playbook /opt/playbooks/deploy-mcp-modules.yml -i /opt/playbooks/hosts --extra-vars \"build_number=${IMAGE_TAG}\" --tags mcp_client",
+                                execTimeout: 180000
+                            )
+                        ]
+                    )
+                ])
+            }
+        }
+
+        stage('Print Info') {
+            when {
+                anyOf {
+                    changeset "mcp-client/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                echo "MCP Client image exportée en ${TAR_FILE} et publiée sur Nexus (${NEXUS_REPO})"
+                echo "Déployée sur le node Docker via Ansible"
+            }
+        }
+
+        stage('Skip Notice') {
+            when {
+                not {
+                    anyOf {
+                        changeset "mcp-client/**"
+                        expression { return params.FORCE_BUILD }
+                    }
+                }
+            }
+            steps {
+                echo "Aucun changement détecté dans mcp-client/ - build et déploiement ignorés."
+                echo "Relance avec le paramètre FORCE_BUILD=true pour forcer quand même."
+            }
+        }
+    }
+
+    post {
+        always {
+            sh "rm -f ${TAR_FILE} || true"
+            sh "docker image prune -f || true"
+            cleanWs()
+        }
+    }
+}

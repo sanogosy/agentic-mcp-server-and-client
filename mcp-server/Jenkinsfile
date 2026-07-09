@@ -1,0 +1,150 @@
+pipeline {
+    agent any
+
+    tools {
+        maven "maven"
+        jdk "corretto21"
+    }
+
+    options {
+        timeout(time: 30, unit: 'MINUTES')
+        disableConcurrentBuilds()
+        timestamps()
+    }
+
+    parameters {
+        booleanParam(
+            name: 'FORCE_BUILD',
+            defaultValue: false,
+            description: 'Ignorer la détection de changement et forcer le build/déploiement même sans modification détectée dans mcp-server/'
+        )
+    }
+
+    environment {
+        APP_NAME    = "mcp-server"
+        IMAGE_TAG   = "${BUILD_NUMBER}"
+        IMAGE_REF   = "${APP_NAME}:${IMAGE_TAG}"
+        TAR_FILE    = "${APP_NAME}-${IMAGE_TAG}.tar"
+        NEXUS_URL   = "http://172.20.10.87:8081"
+        NEXUS_REPO  = "mcp-raw"
+    }
+
+    stages {
+
+        stage('Checkout') {
+            steps {
+                git branch: 'master', url: 'https://github.com/sanogosy/agentic-mcp-server-and-client.git'
+            }
+        }
+
+        stage('Build Jar') {
+            when {
+                anyOf {
+                    changeset "mcp-server/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                dir('mcp-server') {
+                    sh 'mvn -B clean package -DskipTests'
+                }
+            }
+        }
+
+        stage('Build Docker Image') {
+            when {
+                anyOf {
+                    changeset "mcp-server/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                sh "docker build -t ${IMAGE_REF} mcp-server"
+            }
+        }
+
+        stage('Export Image to Tar') {
+            when {
+                anyOf {
+                    changeset "mcp-server/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                sh "docker save ${IMAGE_REF} -o ${TAR_FILE}"
+            }
+        }
+
+        stage('Publish to Nexus') {
+            when {
+                anyOf {
+                    changeset "mcp-server/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                sh """
+                    curl -u admin:adminadmin --upload-file ${TAR_FILE} ${NEXUS_URL}/repository/${NEXUS_REPO}/${TAR_FILE}
+                """
+            }
+        }
+
+        stage('Deploy via Ansible') {
+            when {
+                anyOf {
+                    changeset "mcp-server/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                sshPublisher(publishers: [
+                    sshPublisherDesc(
+                        configName: 'Ansible_Controller',
+                        transfers: [
+                            sshTransfer(
+                                execCommand: "ansible-playbook /opt/playbooks/deploy-mcp-modules.yml -i /opt/playbooks/hosts --extra-vars \"build_number=${IMAGE_TAG}\" --tags mcp_server,postgres",
+                                execTimeout: 180000
+                            )
+                        ]
+                    )
+                ])
+            }
+        }
+
+        stage('Print Info') {
+            when {
+                anyOf {
+                    changeset "mcp-server/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                echo "MCP Server image exportée en ${TAR_FILE} et publiée sur Nexus (${NEXUS_REPO})"
+                echo "Déployée sur le node Docker via Ansible"
+            }
+        }
+
+        stage('Skip Notice') {
+            when {
+                not {
+                    anyOf {
+                        changeset "mcp-server/**"
+                        expression { return params.FORCE_BUILD }
+                    }
+                }
+            }
+            steps {
+                echo "Aucun changement détecté dans mcp-server/ - build et déploiement ignorés."
+                echo "Relance avec le paramètre FORCE_BUILD=true pour forcer quand même."
+            }
+        }
+    }
+
+    post {
+        always {
+            sh "rm -f ${TAR_FILE} || true"
+            sh "docker image prune -f || true"
+            cleanWs()
+        }
+    }
+}
