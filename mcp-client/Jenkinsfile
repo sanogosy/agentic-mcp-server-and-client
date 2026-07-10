@@ -33,7 +33,7 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                git branch: 'master', url: 'https://github.com/sanogosy/mcp-modules.git' // AJUSTER l'URL réelle du repo
+                git branch: 'master', url: 'https://github.com/sanogosy/agentic-mcp-server-and-client.git'
             }
         }
 
