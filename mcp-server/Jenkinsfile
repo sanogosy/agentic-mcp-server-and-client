@@ -103,7 +103,7 @@ pipeline {
                         transfers: [
                             sshTransfer(
                                 execCommand: "ansible-playbook /opt/playbooks/deploy-mcp-modules.yml -i /opt/playbooks/hosts --extra-vars \"build_number=${IMAGE_TAG}\" --tags mcp_server,postgres",
-                                execTimeout: 180000
+                                execTimeout: 420000
                             )
                         ]
                     )

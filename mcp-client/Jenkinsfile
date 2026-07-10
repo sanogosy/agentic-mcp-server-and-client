@@ -33,7 +33,6 @@ pipeline {
 
         stage('Checkout') {
             steps {
-                // Monorepo : on clone tout le repo, ce module vit dans le sous-dossier mcp-client/
                 git branch: 'master', url: 'https://github.com/sanogosy/mcp-modules.git' // AJUSTER l'URL réelle du repo
             }
         }
@@ -60,7 +59,6 @@ pipeline {
                 }
             }
             steps {
-                // contexte de build = sous-dossier mcp-client (contient le Dockerfile)
                 sh "docker build -t ${IMAGE_REF} mcp-client"
             }
         }
@@ -73,8 +71,6 @@ pipeline {
                 }
             }
             steps {
-                // Pas de registre Docker, pas de TLS requis : on exporte l'image
-                // en fichier .tar, comme le zip Angular.
                 sh "docker save ${IMAGE_REF} -o ${TAR_FILE}"
             }
         }
@@ -101,14 +97,13 @@ pipeline {
                 }
             }
             steps {
-                // NOTE : mcp-client dépend de mcp-server + Ollama déjà démarrés sur le node Docker.
                 sshPublisher(publishers: [
                     sshPublisherDesc(
                         configName: 'Ansible_Controller',
                         transfers: [
                             sshTransfer(
                                 execCommand: "ansible-playbook /opt/playbooks/deploy-mcp-modules.yml -i /opt/playbooks/hosts --extra-vars \"build_number=${IMAGE_TAG}\" --tags mcp_client",
-                                execTimeout: 180000
+                                execTimeout: 420000
                             )
                         ]
                     )
