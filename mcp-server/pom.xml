@@ -11,6 +11,7 @@
     <groupId>com.mcpserver</groupId>
     <artifactId>mcpserver</artifactId>
     <version>0.0.1-SNAPSHOT</version>
+    <packaging>jar</packaging>
     <name>mcpserver</name>
     <description>Demo project for Spring Boot</description>
     <url/>
