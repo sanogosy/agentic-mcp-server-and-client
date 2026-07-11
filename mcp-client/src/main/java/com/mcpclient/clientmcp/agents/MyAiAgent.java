@@ -250,7 +250,8 @@ public class MyAiAgent {
     public MyAiAgent(ChatClient.Builder chatClientBuilder, List<McpAsyncClient> mcpAsyncClients) {
         this.mcpAsyncClients = mcpAsyncClients;
         this.chatClient = chatClientBuilder
-                .defaultSystem(DEFAULT_SYSTEM_PROMPT)
+//                .defaultSystem(DEFAULT_SYSTEM_PROMPT)
+                .defaultSystem(DEFAULT_SYSTEM_PROMPT_2)
                 .defaultAdvisors(
                         MessageChatMemoryAdvisor.builder(
                                 MessageWindowChatMemory.builder().maxMessages(20).build()
@@ -313,14 +314,15 @@ public class MyAiAgent {
 
     private String selectTool(String q) {
         String query = q.toLowerCase();
-        if(query.contains("alfresco") || query.contains("mcp") || query.contains("rag")) {
-            return "get-alfresco-informations";
-        }
+//        if(query.contains("alfresco") || query.contains("mcp") || query.contains("rag")) {
+//            return "get-alfresco-informations";
+//        }
         if(query.contains("voiture") || query.contains("marque") || query.contains("prix")) {
             return "search-hybrid-postgreSQL";
         }
         else {
-            return "search-hybrid";
+//            return "search-hybrid";
+            return "search-hybrid-postgreSQL";
         }
     }
 
