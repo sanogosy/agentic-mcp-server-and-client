@@ -72,6 +72,7 @@ pipeline {
             }
             steps {
                 sh "docker save ${IMAGE_REF} -o ${TAR_FILE}"
+                sh "docker rmi ${IMAGE_REF} || true"
             }
         }
 
@@ -143,7 +144,7 @@ pipeline {
     post {
         always {
             sh "rm -f ${TAR_FILE} || true"
-            sh "docker image prune -f || true"
+            sh "docker image prune -a -f --filter 'until=1h' || true"
             cleanWs()
         }
     }
