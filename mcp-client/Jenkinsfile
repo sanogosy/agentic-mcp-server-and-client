@@ -21,12 +21,13 @@ pipeline {
     }
 
     environment {
-        APP_NAME    = "mcp-client"
-        IMAGE_TAG   = "${BUILD_NUMBER}"
-        IMAGE_REF   = "${APP_NAME}:${IMAGE_TAG}"
-        TAR_FILE    = "${APP_NAME}-${IMAGE_TAG}.tar"
-        NEXUS_URL   = "http://172.20.10.87:8081"
-        NEXUS_REPO  = "mcp-raw"
+        APP_NAME          = "mcp-client"
+        IMAGE_TAG         = "${BUILD_NUMBER}"
+        IMAGE_REF         = "${APP_NAME}:${IMAGE_TAG}"
+        TAR_FILE          = "${APP_NAME}-${IMAGE_TAG}.tar"
+        NEXUS_URL         = "http://172.20.10.87:8081"
+        NEXUS_REPO        = "mcp-raw"
+        SONAR_PROJECT_KEY = "mcp-client"
     }
 
     stages {
@@ -47,6 +48,36 @@ pipeline {
             steps {
                 dir('mcp-client') {
                     sh 'mvn -B clean package -DskipTests'
+                }
+            }
+        }
+
+        stage('SonarQube Analysis') {
+            when {
+                anyOf {
+                    changeset "mcp-client/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                dir('mcp-client') {
+                    withSonarQubeEnv('SonarQube') {
+                        sh "mvn -B sonar:sonar -Dsonar.projectKey=${SONAR_PROJECT_KEY}"
+                    }
+                }
+            }
+        }
+
+        stage('Quality Gate') {
+            when {
+                anyOf {
+                    changeset "mcp-client/**"
+                    expression { return params.FORCE_BUILD }
+                }
+            }
+            steps {
+                timeout(time: 5, unit: 'MINUTES') {
+                    waitForQualityGate abortPipeline: true
                 }
             }
         }
@@ -72,7 +103,7 @@ pipeline {
             }
             steps {
                 sh "docker save ${IMAGE_REF} -o ${TAR_FILE}"
-                sh "docker rmi ${IMAGE_REF} || true"
+                sh "sudo docker rmi ${IMAGE_REF} || true"
             }
         }
 
@@ -144,7 +175,7 @@ pipeline {
     post {
         always {
             sh "rm -f ${TAR_FILE} || true"
-            sh "docker image prune -a -f --filter 'until=1h' || true"
+            sh "sudo docker image prune -a -f --filter 'until=1h' || true"
             cleanWs()
         }
     }
