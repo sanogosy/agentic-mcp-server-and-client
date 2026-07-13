@@ -115,7 +115,7 @@ pipeline {
             }
             steps {
                 sh """
-                    curl -u admin:adminadmin --upload-file ${TAR_FILE} ${NEXUS_URL}/repository/${NEXUS_REPO}/${TAR_FILE}
+                    curl -f --retry 3 --retry-delay 5 -u admin:adminadmin --upload-file ${TAR_FILE} ${NEXUS_URL}/repository/${NEXUS_REPO}/${TAR_FILE}
                 """
             }
         }
